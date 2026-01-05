@@ -88,6 +88,30 @@ jobs:
       image: rockylinux:9
 
     steps:
+      - name: Free Disk/Inode Space (提前清理，核心！)
+        run: |
+          # 🔥 检查磁盘和inode（定位根因）
+          df -h && df -i
+          
+          # 🔥 清理Runner核心日志目录（避免日志占满空间）
+          rm -rf /home/runner/actions-runner/cached/_diag/* 2>/dev/null || true
+          rm -rf /home/runner/actions-runner/_work/_temp/* 2>/dev/null || true
+          
+          # 🔥 清理系统级冗余文件
+          dnf clean all || true
+          rm -rf /var/cache/dnf/* /tmp/* /var/tmp/* 2>/dev/null || true
+          rm -rf /usr/share/man/* /usr/share/doc/* 2>/dev/null || true
+          
+          # 🔥 清理RocksDB海量小文件（解决inode耗尽，核心！）
+          find / -name "*.sst" -o -name "*.wal" -o -name "*.ldb" -o -name "*.manifest" -delete 2>/dev/null || true
+          find / -name "*.dbtmp" -o -name "LOCK" -o -name "*.log.*" -delete 2>/dev/null || true
+          
+          # 🔥 清理编译/测试残留文件（提前释放空间）
+          rm -rf ${{ github.workspace }}/deps ${{ github.workspace }}/buildtrees ${{ github.workspace }}/build 2>/dev/null || true
+          rm -rf ${{ github.workspace }}/master_data ${{ github.workspace }}/slave_data 2>/dev/null || true
+          
+          # 🔥 再次检查清理效果
+          df -h && df -i
       - name: set up mirror
         run: |
           rm -rf /etc/yum.repos.d/CentOS-Base.repo 
@@ -194,6 +218,9 @@ jobs:
       - name: Cleanup
         run: |
           rm -rf ./buildtrees
+          find ./build -name "*.o" -o -name "*.a" -delete 2>/dev/null || true
+          rm -rf ./build/CMakeFiles 2>/dev/null || true
+          df -h && df -i
 
       - name: Test
         working-directory: ${{ github.workspace }}/build
